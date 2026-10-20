@@ -155,6 +155,10 @@ def parse_date(v: str) -> str | None:
     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", s)
     if m:
         return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    # Descarta a hora quando vier junto ("7/10/2026 19:01", "08/10/2026, 18:43:07").
+    m = re.match(r"(\d{1,2}/\d{1,2}/\d{2,4})[,\s]", s)
+    if m:
+        s = m.group(1)
     for fmt in ("%d/%m/%Y", "%m/%d/%Y", "%d/%m/%y", "%b %d, %Y", "%Y/%m/%d"):
         try:
             return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
@@ -308,6 +312,12 @@ def process(meta_rows, sales_rows):
         {"created": 3, "name": 1, "email": 2, "prod": 0, "val": 6},
     )
 
+    # Sem coluna Produto/Product no cabeçalho, o fallback posicional (0) apontaria
+    # para outra coluna (ex.: Data). Nesse caso a aba inteira é do funil: toda
+    # linha conta como o produto principal.
+    if not any(norm(a) in norm(h) for h in sheader for a in ("produto", "product")):
+        sidx["prod"] = None
+
     sales = []
     for row in sales_rows[1:]:
         if not any((c or "").strip() for c in row):
@@ -316,7 +326,7 @@ def process(meta_rows, sales_rows):
             continue
         if not COUNT_ALL_AS_PAID and not is_paid(cell(row, sidx["status"])):
             continue
-        prod = cell(row, sidx["prod"])
+        prod = cell(row, sidx["prod"]) if sidx["prod"] is not None else MAIN_PRODUCT
         # O identificador do anúncio no Meta (Ad Name) vem da coluna UTM apontada
         # por AD_UTM_COLUMN em build/config.py — que coluna é depende do
         # parametrizador de URL do cliente. A outra normalmente carrega o
